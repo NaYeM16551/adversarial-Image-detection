@@ -116,11 +116,11 @@ def train_classifier(dataset_path=None, output_dir=None, test_size=0.2, random_s
         y_prob = model.predict_proba(X_test_scaled)[:, 1]
         
         # Metrics
-        acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred)
-        rec = recall_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, y_prob)
+        acc  = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, zero_division=0)
+        rec  = recall_score(y_test, y_pred, zero_division=0)
+        f1   = f1_score(y_test, y_pred, zero_division=0)
+        auc  = roc_auc_score(y_test, y_prob)
         
         results[name] = {
             "accuracy": acc,
@@ -140,8 +140,9 @@ def train_classifier(dataset_path=None, output_dir=None, test_size=0.2, random_s
         
         # Detailed classification report
         print(f"\n  Classification Report:")
-        report = classification_report(y_test, y_pred, 
-                                        target_names=["Clean", "Adversarial"])
+        report = classification_report(y_test, y_pred,
+                                        target_names=["Clean", "Adversarial"],
+                                        zero_division=0)
         print(report)
         
         # Track best model

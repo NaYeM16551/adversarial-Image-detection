@@ -187,6 +187,19 @@ def cmd_demo(args):
         # Load detector
         detector = AdversarialDetector(device=device)
         
+        # Load ImageNet class names for ViT output.
+        # ViT is pretrained on ImageNet (1000 classes), NOT CIFAR-10/100.
+        # Its classify() returns ImageNet indices (0-999).
+        try:
+            import json, urllib.request
+            _url = "https://raw.githubusercontent.com/anishathalye/imagenet-simple-labels/master/imagenet-simple-labels.json"
+            with urllib.request.urlopen(_url, timeout=5) as r:
+                imagenet_names = json.loads(r.read().decode())
+            print("[Demo] Loaded ImageNet class names.")
+        except Exception:
+            imagenet_names = [f"cls_{i}" for i in range(1000)]
+            print("[Demo] Could not fetch ImageNet names, using cls_N fallback.")
+        
         # Load ResNet-18 for generating adversarial examples
         resnet_weights = os.path.join("outputs", f"resnet18_{dataset}.pth")
         resnet_model = load_resnet(num_classes=num_classes, weights_path=resnet_weights, device=device)
@@ -203,13 +216,20 @@ def cmd_demo(args):
     num_demo = min(args.num_samples, len(test_dataset)) if hasattr(args, 'num_samples') else 5
     indices = np.random.choice(len(test_dataset), num_demo, replace=False)
     
-    # Detection accuracy counters (did our detector correctly label clean/adversarial?)
+    # Detection accuracy counters
     correct = 0
-    total = 0
+    total   = 0
     
-    # Attack success counters (did the adversarial image fool ViT's own classifier?)
-    vit_fooled_fgsm = 0
-    vit_fooled_pgd  = 0
+    # ViT representation shift: did the attack change ViT's own prediction?
+    # Comparing ViT(clean) vs ViT(adv) is the correct metric.
+    # (NOT ViT(adv) vs CIFAR label — those are different label spaces)
+    vit_shifted_fgsm = 0
+    vit_shifted_pgd  = 0
+    
+    def vit_name(idx):
+        if 0 <= idx < len(imagenet_names):
+            return imagenet_names[idx]
+        return f"cls_{idx}"
     
     try:
         for idx in indices:
@@ -220,9 +240,9 @@ def cmd_demo(args):
             print(f"\n{'─' * 55}")
             print(f"Image {idx:5d} | True class: {true_class}")
             
-            # ── ViT's classification of the CLEAN image ──────────────────
-            vit_clean_pred = detector.classify(image)
-            vit_clean_name = class_names[vit_clean_pred] if vit_clean_pred < len(class_names) else f"cls_{vit_clean_pred}"
+            # ── ViT's classification of the CLEAN image ────────────────
+            vit_clean_idx  = detector.classify(image)
+            vit_clean_name = vit_name(vit_clean_idx)
             
             # ── Detection: is this clean or adversarial? ─────────────────
             result_clean = detector.predict(image)
@@ -230,56 +250,55 @@ def cmd_demo(args):
             correct += int(is_correct_clean)
             total += 1
             status = "✓" if is_correct_clean else "✗"
-            clean_match = "✓" if vit_clean_pred == label else "✗"
             print(f"  Clean:    Detected={result_clean['label']:<18s} "
                   f"(conf:{result_clean['confidence']:.3f}) [{status}]  "
-                  f"ViT classifies as: {vit_clean_name} [{clean_match}]")
+                  f"ViT sees: {vit_clean_name}")
             
-            # ── FGSM adversarial ─────────────────────────────────────────
+            # ── FGSM adversarial ────────────────────────────────────
             adv_fgsm = fgsm_attack(resnet_model, image, label)
             result_fgsm = detector.predict(adv_fgsm)
             is_correct_fgsm = result_fgsm["prediction"] == 1
             correct += int(is_correct_fgsm)
             total += 1
             status = "✓" if is_correct_fgsm else "✗"
-            
-            vit_fgsm_pred = detector.classify(adv_fgsm)
-            vit_fgsm_name = class_names[vit_fgsm_pred] if vit_fgsm_pred < len(class_names) else f"cls_{vit_fgsm_pred}"
-            fooled_fgsm   = vit_fgsm_pred != label
-            vit_fooled_fgsm += int(fooled_fgsm)
-            fool_tag = "FOOLED ✗" if fooled_fgsm else "not fooled ✓"
+            vit_fgsm_idx  = detector.classify(adv_fgsm)
+            vit_fgsm_name = vit_name(vit_fgsm_idx)
+            shifted_fgsm  = vit_fgsm_idx != vit_clean_idx
+            vit_shifted_fgsm += int(shifted_fgsm)
+            tag = f"shifted→{vit_fgsm_name} ✗" if shifted_fgsm else f"stable({vit_fgsm_name}) ✓"
             print(f"  FGSM:     Detected={result_fgsm['label']:<18s} "
                   f"(conf:{result_fgsm['confidence']:.3f}) [{status}]  "
-                  f"ViT: {true_class} → {vit_fgsm_name} [{fool_tag}]")
+                  f"ViT: {vit_clean_name} → {tag}")
             
-            # ── PGD adversarial ──────────────────────────────────────────
+            # ── PGD adversarial ───────────────────────────────────────
             adv_pgd = pgd_attack(resnet_model, image, label)
             result_pgd = detector.predict(adv_pgd)
             is_correct_pgd = result_pgd["prediction"] == 1
             correct += int(is_correct_pgd)
             total += 1
             status = "✓" if is_correct_pgd else "✗"
-            
-            vit_pgd_pred = detector.classify(adv_pgd)
-            vit_pgd_name = class_names[vit_pgd_pred] if vit_pgd_pred < len(class_names) else f"cls_{vit_pgd_pred}"
-            fooled_pgd   = vit_pgd_pred != label
-            vit_fooled_pgd += int(fooled_pgd)
-            fool_tag = "FOOLED ✗" if fooled_pgd else "not fooled ✓"
+            vit_pgd_idx  = detector.classify(adv_pgd)
+            vit_pgd_name = vit_name(vit_pgd_idx)
+            shifted_pgd  = vit_pgd_idx != vit_clean_idx
+            vit_shifted_pgd += int(shifted_pgd)
+            tag = f"shifted→{vit_pgd_name} ✗" if shifted_pgd else f"stable({vit_pgd_name}) ✓"
             print(f"  PGD:      Detected={result_pgd['label']:<18s} "
                   f"(conf:{result_pgd['confidence']:.3f}) [{status}]  "
-                  f"ViT: {true_class} → {vit_pgd_name} [{fool_tag}]")
+                  f"ViT: {vit_clean_name} → {tag}")
         
-        # ── Summary ──────────────────────────────────────────────────────
-        print(f"\n{'=' * 55}")
-        print(f" DETECTION SUMMARY  ({num_demo} images)")
-        print(f"{'=' * 55}")
-        print(f"  Detector accuracy:      {correct}/{total} = {100*correct/total:.1f}%")
-        print(f"  (correctly labelled clean + adversarial samples)")
-        print(f"\n  ViT ATTACK SUCCESS RATE (transfer attack from ResNet-18):")
-        print(f"  FGSM fooled ViT:  {vit_fooled_fgsm}/{num_demo} = {100*vit_fooled_fgsm/num_demo:.1f}%")
-        print(f"  PGD  fooled ViT:  {vit_fooled_pgd}/{num_demo}  = {100*vit_fooled_pgd/num_demo:.1f}%")
-        print(f"  (% of adversarial images where ViT predicted wrong class)")
-        print(f"{'=' * 55}")
+        # ── Summary ──────────────────────────────────────────────
+        print(f"\n{'=' * 62}")
+        print(f" DETECTION SUMMARY  ({num_demo} images tested)")
+        print(f"{'=' * 62}")
+        print(f"  Detector accuracy : {correct}/{total} = {100*correct/total:.1f}%")
+        print(f"  (of clean + adversarial samples correctly identified)")
+        print()
+        print(f"  ViT REPRESENTATION SHIFT (transfer attack ResNet-18 → ViT):")
+        print(f"  NOTE: ViT uses ImageNet labels. 'shift' = ViT changed its")
+        print(f"        own prediction from clean to adversarial input.")
+        print(f"  FGSM shifted ViT: {vit_shifted_fgsm}/{num_demo} = {100*vit_shifted_fgsm/num_demo:.1f}%")
+        print(f"  PGD  shifted ViT: {vit_shifted_pgd}/{num_demo} = {100*vit_shifted_pgd/num_demo:.1f}%")
+        print(f"{'=' * 62}")
     except KeyboardInterrupt:
         print("\n[INFO] Demo interrupted by user")
     except Exception as e:
