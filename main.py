@@ -283,8 +283,8 @@ Examples (CIFAR-100):
     p_finetune.add_argument("--dataset", type=str, default="cifar10",
                            choices=["cifar10", "cifar100"],
                            help="Dataset to train on (default: cifar10)")
-    p_finetune.add_argument("--epochs", type=int, default=30,
-                           help="Number of training epochs (default: 30)")
+    p_finetune.add_argument("--epochs", type=int, default=25,
+                           help="Number of training epochs (default: 25)")
     p_finetune.add_argument("--batch-size", type=int, default=128,
                            help="Training batch size (default: 128)")
     p_finetune.add_argument("--lr", type=float, default=0.001,
