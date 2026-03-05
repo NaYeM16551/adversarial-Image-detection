@@ -45,7 +45,7 @@ def build_score_dataset(num_images=1000, save_path=None, device=None,
         y: numpy array of shape (num_images * 3,) — labels (0=clean, 1=adversarial)
     """
     if device is None:
-        device = torch.device("cuda" if torch.cuda_is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if save_path is None:
         save_path = os.path.join("outputs", "score_dataset.npz")
