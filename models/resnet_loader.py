@@ -45,6 +45,13 @@ def load_resnet(num_classes=10, weights_path=None, device=None):
     # Replace final fully connected layer for CIFAR-10 (10 classes)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     
+    # IMPORTANT: Match the CIFAR-10 architecture used during fine-tuning.
+    # Standard ResNet-18 uses a 7x7 conv + maxpool designed for 224x224 images.
+    # We use a 3x3 conv and remove maxpool for 32x32 CIFAR-10 images.
+    # These MUST match the checkpoint's architecture exactly, or load_state_dict fails.
+    model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    model.maxpool = nn.Identity()  # Remove downsampling for small images
+    
     # Try to load fine-tuned weights
     if weights_path is None:
         weights_path = os.path.join("outputs", "resnet18_cifar10.pth")

@@ -141,8 +141,7 @@ def train_classifier(dataset_path=None, output_dir=None, test_size=0.2, random_s
         # Detailed classification report
         print(f"\n  Classification Report:")
         report = classification_report(y_test, y_pred, 
-                                        target_names=["Clean", "Adversarial"],
-                                        indent=4)
+                                        target_names=["Clean", "Adversarial"])
         print(report)
         
         # Track best model
