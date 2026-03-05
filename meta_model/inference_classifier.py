@@ -97,6 +97,33 @@ class AdversarialDetector:
             }
         }
     
+    def classify(self, image_tensor):
+        """
+        Run the ViT's own classifier on an image and return the predicted class index.
+        
+        This shows what the ViT "thinks" the image is — useful for checking
+        whether an adversarial example (crafted against ResNet-18) also
+        succeeds in fooling the ViT's classification head.
+        
+        Args:
+            image_tensor: (C, H, W) tensor in [0, 1] range
+        
+        Returns:
+            int: predicted class index
+        """
+        from models.vit_loader import get_vit_preprocess
+        preprocess = get_vit_preprocess()
+        
+        img = image_tensor.clone()
+        if img.dim() == 3:
+            img = img.unsqueeze(0)
+        img = preprocess(img).to(self.device)
+        
+        with torch.no_grad():
+            logits = self.vit_model(img)          # (1, num_classes)
+        
+        return int(logits.argmax(dim=1).item())
+    
     def cleanup(self):
         """Remove ViT hooks and free resources."""
         remove_hooks(self.hook_handles)

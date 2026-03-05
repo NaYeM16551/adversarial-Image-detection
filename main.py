@@ -203,53 +203,88 @@ def cmd_demo(args):
     num_demo = min(args.num_samples, len(test_dataset)) if hasattr(args, 'num_samples') else 5
     indices = np.random.choice(len(test_dataset), num_demo, replace=False)
     
+    # Detection accuracy counters (did our detector correctly label clean/adversarial?)
     correct = 0
     total = 0
+    
+    # Attack success counters (did the adversarial image fool ViT's own classifier?)
+    vit_fooled_fgsm = 0
+    vit_fooled_pgd  = 0
     
     try:
         for idx in indices:
             image, label = test_dataset[idx]
             image = image.to(device)
+            true_class = class_names[label]
             
-            print(f"\n{'─' * 50}")
-            print(f"Image {idx} | True class: {class_names[label]}")
+            print(f"\n{'─' * 55}")
+            print(f"Image {idx:5d} | True class: {true_class}")
             
-            # Test clean image
+            # ── ViT's classification of the CLEAN image ──────────────────
+            vit_clean_pred = detector.classify(image)
+            vit_clean_name = class_names[vit_clean_pred] if vit_clean_pred < len(class_names) else f"cls_{vit_clean_pred}"
+            
+            # ── Detection: is this clean or adversarial? ─────────────────
             result_clean = detector.predict(image)
             is_correct_clean = result_clean["prediction"] == 0
             correct += int(is_correct_clean)
             total += 1
             status = "✓" if is_correct_clean else "✗"
-            print(f"  Clean:    {result_clean['label']} "
-                  f"(conf: {result_clean['confidence']:.4f}) [{status}]")
+            clean_match = "✓" if vit_clean_pred == label else "✗"
+            print(f"  Clean:    Detected={result_clean['label']:<18s} "
+                  f"(conf:{result_clean['confidence']:.3f}) [{status}]  "
+                  f"ViT classifies as: {vit_clean_name} [{clean_match}]")
             
-            # Test FGSM adversarial
+            # ── FGSM adversarial ─────────────────────────────────────────
             adv_fgsm = fgsm_attack(resnet_model, image, label)
             result_fgsm = detector.predict(adv_fgsm)
             is_correct_fgsm = result_fgsm["prediction"] == 1
             correct += int(is_correct_fgsm)
             total += 1
             status = "✓" if is_correct_fgsm else "✗"
-            print(f"  FGSM:     {result_fgsm['label']} "
-                  f"(conf: {result_fgsm['confidence']:.4f}) [{status}]")
             
-            # Test PGD adversarial
+            vit_fgsm_pred = detector.classify(adv_fgsm)
+            vit_fgsm_name = class_names[vit_fgsm_pred] if vit_fgsm_pred < len(class_names) else f"cls_{vit_fgsm_pred}"
+            fooled_fgsm   = vit_fgsm_pred != label
+            vit_fooled_fgsm += int(fooled_fgsm)
+            fool_tag = "FOOLED ✗" if fooled_fgsm else "not fooled ✓"
+            print(f"  FGSM:     Detected={result_fgsm['label']:<18s} "
+                  f"(conf:{result_fgsm['confidence']:.3f}) [{status}]  "
+                  f"ViT: {true_class} → {vit_fgsm_name} [{fool_tag}]")
+            
+            # ── PGD adversarial ──────────────────────────────────────────
             adv_pgd = pgd_attack(resnet_model, image, label)
             result_pgd = detector.predict(adv_pgd)
             is_correct_pgd = result_pgd["prediction"] == 1
             correct += int(is_correct_pgd)
             total += 1
             status = "✓" if is_correct_pgd else "✗"
-            print(f"  PGD:      {result_pgd['label']} "
-                  f"(conf: {result_pgd['confidence']:.4f}) [{status}]")
+            
+            vit_pgd_pred = detector.classify(adv_pgd)
+            vit_pgd_name = class_names[vit_pgd_pred] if vit_pgd_pred < len(class_names) else f"cls_{vit_pgd_pred}"
+            fooled_pgd   = vit_pgd_pred != label
+            vit_fooled_pgd += int(fooled_pgd)
+            fool_tag = "FOOLED ✗" if fooled_pgd else "not fooled ✓"
+            print(f"  PGD:      Detected={result_pgd['label']:<18s} "
+                  f"(conf:{result_pgd['confidence']:.3f}) [{status}]  "
+                  f"ViT: {true_class} → {vit_pgd_name} [{fool_tag}]")
         
-        print(f"\n{'=' * 60}")
-        print(f" Demo Accuracy: {correct}/{total} = {100*correct/total:.1f}%")
-        print(f"{'=' * 60}")
+        # ── Summary ──────────────────────────────────────────────────────
+        print(f"\n{'=' * 55}")
+        print(f" DETECTION SUMMARY  ({num_demo} images)")
+        print(f"{'=' * 55}")
+        print(f"  Detector accuracy:      {correct}/{total} = {100*correct/total:.1f}%")
+        print(f"  (correctly labelled clean + adversarial samples)")
+        print(f"\n  ViT ATTACK SUCCESS RATE (transfer attack from ResNet-18):")
+        print(f"  FGSM fooled ViT:  {vit_fooled_fgsm}/{num_demo} = {100*vit_fooled_fgsm/num_demo:.1f}%")
+        print(f"  PGD  fooled ViT:  {vit_fooled_pgd}/{num_demo}  = {100*vit_fooled_pgd/num_demo:.1f}%")
+        print(f"  (% of adversarial images where ViT predicted wrong class)")
+        print(f"{'=' * 55}")
     except KeyboardInterrupt:
         print("\n[INFO] Demo interrupted by user")
     except Exception as e:
         print(f"\n[ERROR] Demo failed: {e}")
+        import traceback; traceback.print_exc()
     finally:
         detector.cleanup()
 
@@ -315,8 +350,8 @@ Examples (CIFAR-100):
     p_demo.add_argument("--dataset", type=str, default="cifar10",
                        choices=["cifar10", "cifar100"],
                        help="Dataset to use (default: cifar10)")
-    p_demo.add_argument("--num-samples", type=int, default=5,
-                       help="Number of sample images (default: 5)")
+    p_demo.add_argument("--num-samples", type=int, default=100,
+                       help="Number of sample images (default: 100)")
     
     args = parser.parse_args()
     

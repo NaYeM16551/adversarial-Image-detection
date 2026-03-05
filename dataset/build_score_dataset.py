@@ -82,8 +82,8 @@ def build_score_dataset(num_images=1000, save_path=None, device=None,
     
     print()
     
-    # --- Load CIFAR-10 test set ---
-    print("[2/4] Loading CIFAR-10 test set...")
+    # --- Load dataset ---
+    print(f"[2/4] Loading {dataset_name.upper()} test set...")
     
     test_transform = transforms.Compose([
         transforms.ToTensor(),  # Converts to [0, 1] range
@@ -100,7 +100,7 @@ def build_score_dataset(num_images=1000, save_path=None, device=None,
     )
     
     # Select a balanced subset: equal images per class
-    num_classes = 10
+    # num_classes is already correctly set above (10 for CIFAR-10, 100 for CIFAR-100)
     images_per_class = num_images // num_classes
     
     # Group indices by class
