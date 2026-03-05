@@ -26,7 +26,8 @@ from attacks.fgsm import fgsm_attack
 from attacks.pgd import pgd_attack
 
 
-def build_score_dataset(num_images=1000, save_path=None, device=None):
+def build_score_dataset(num_images=1000, save_path=None, device=None,
+                         dataset_name="cifar10", resnet_weights_path=None):
     """
     Build the feature consistency score dataset.
     
@@ -36,23 +37,29 @@ def build_score_dataset(num_images=1000, save_path=None, device=None):
         save_path: path to save the .npz file 
                    (default: outputs/score_dataset.npz)
         device: torch device
+        dataset_name: 'cifar10' or 'cifar100' (default: 'cifar10')
+        resnet_weights_path: path to ResNet-18 checkpoint (overrides default)
     
     Returns:
         X: numpy array of shape (num_images * 3, 24) — score vectors
         y: numpy array of shape (num_images * 3,) — labels (0=clean, 1=adversarial)
     """
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda_is_available() else "cpu")
     
     if save_path is None:
         save_path = os.path.join("outputs", "score_dataset.npz")
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
+    dataset_name = dataset_name.lower()
+    num_classes = 100 if dataset_name == "cifar100" else 10
+    
     print("=" * 60)
     print("Building Feature Consistency Score Dataset")
     print("=" * 60)
     print(f"Device: {device}")
+    print(f"Dataset: {dataset_name.upper()} ({num_classes} classes)")
     print(f"Number of images: {num_images}")
     print(f"Expected samples: {num_images * 3} (clean + FGSM + PGD)")
     print()
@@ -64,7 +71,11 @@ def build_score_dataset(num_images=1000, save_path=None, device=None):
     vit_model, hook_dict, hook_handles = load_vit(device=device)
     
     # ResNet-18 — attack model (adversarial generation)
-    resnet_model = load_resnet(device=device)
+    resnet_model = load_resnet(
+        num_classes=num_classes,
+        weights_path=resnet_weights_path,
+        device=device
+    )
     # Temporarily enable gradients for attack generation
     for param in resnet_model.parameters():
         param.requires_grad = True
@@ -78,7 +89,13 @@ def build_score_dataset(num_images=1000, save_path=None, device=None):
         transforms.ToTensor(),  # Converts to [0, 1] range
     ])
     
-    test_dataset = datasets.CIFAR10(
+    # Load the appropriate dataset (CIFAR-10 or CIFAR-100)
+    if dataset_name == "cifar100":
+        from torchvision.datasets import CIFAR100 as CIFARDataset
+    else:
+        from torchvision.datasets import CIFAR10 as CIFARDataset
+    
+    test_dataset = CIFARDataset(
         root="./data", train=False, download=True, transform=test_transform
     )
     

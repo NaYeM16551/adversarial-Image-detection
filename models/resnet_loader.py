@@ -74,9 +74,10 @@ def load_resnet(num_classes=10, weights_path=None, device=None):
 
 
 def finetune_resnet(num_epochs=15, batch_size=128, lr=0.001, 
-                    save_path=None, device=None):
+                    save_path=None, device=None,
+                    num_classes=10, dataset_name="cifar10"):
     """
-    Fine-tune ResNet-18 on CIFAR-10 training set.
+    Fine-tune ResNet-18 on CIFAR-10 or CIFAR-100 training set.
     
     The model needs to be a competent classifier so that adversarial
     attacks (FGSM, PGD) crafted against it are meaningful.
@@ -85,8 +86,10 @@ def finetune_resnet(num_epochs=15, batch_size=128, lr=0.001,
         num_epochs: number of training epochs
         batch_size: training batch size
         lr: learning rate
-        save_path: where to save weights (default: outputs/resnet18_cifar10.pth)
+        save_path: where to save weights
         device: torch device
+        num_classes: 10 for CIFAR-10, 100 for CIFAR-100
+        dataset_name: 'cifar10' or 'cifar100'
     
     Returns:
         model: fine-tuned ResNet-18 in eval mode
@@ -94,12 +97,15 @@ def finetune_resnet(num_epochs=15, batch_size=128, lr=0.001,
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    dataset_name = dataset_name.lower()
+    
     if save_path is None:
-        save_path = os.path.join("outputs", "resnet18_cifar10.pth")
+        save_path = os.path.join("outputs", f"resnet18_{dataset_name}.pth")
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
+    print(f"[ResNet Fine-Tuning] Dataset: {dataset_name.upper()} ({num_classes} classes)")
     print(f"[ResNet Fine-Tuning] Device: {device}")
     print(f"[ResNet Fine-Tuning] Epochs: {num_epochs}, Batch size: {batch_size}, LR: {lr}")
     
@@ -116,10 +122,16 @@ def finetune_resnet(num_epochs=15, batch_size=128, lr=0.001,
         transforms.ToTensor(),
     ])
     
-    train_dataset = datasets.CIFAR10(root="./data", train=True, 
-                                      download=True, transform=train_transform)
-    test_dataset = datasets.CIFAR10(root="./data", train=False, 
-                                     download=True, transform=test_transform)
+    # Load the appropriate dataset
+    if dataset_name == "cifar100":
+        from torchvision.datasets import CIFAR100 as CIFARDataset
+    else:
+        from torchvision.datasets import CIFAR10 as CIFARDataset
+    
+    train_dataset = CIFARDataset(root="./data", train=True,
+                                  download=True, transform=train_transform)
+    test_dataset = CIFARDataset(root="./data", train=False,
+                                 download=True, transform=test_transform)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, 
                                shuffle=True, num_workers=2)
@@ -127,9 +139,9 @@ def finetune_resnet(num_epochs=15, batch_size=128, lr=0.001,
                               shuffle=False, num_workers=2)
     
     # --- Model setup ---
-    # Train from scratch on CIFAR-10 (no internet download needed)
+    # Train from scratch on CIFAR-10/100 (no internet download needed)
     model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, 10)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)  # 10 or 100 classes
     
     # Modify first conv layer for 32x32 input (smaller kernel, no downsampling)
     model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)

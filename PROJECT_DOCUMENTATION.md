@@ -458,7 +458,7 @@ def compute_score_vector(model, image_tensor, hook_dict,
     return score_vector  # 24 float values
 ```
 
-### Score Vector Layout---
+### Score Vector Layout
 
 ```
 Index  Feature Name          What It Measures

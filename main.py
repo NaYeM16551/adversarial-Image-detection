@@ -25,13 +25,21 @@ import numpy as np
 
 
 def cmd_finetune_resnet(args):
-    """Fine-tune ResNet-18 on CIFAR-10 dataset."""
+    """Fine-tune ResNet-18 on the specified dataset (cifar10 or cifar100)."""
     from models.resnet_loader import finetune_resnet
     
+    dataset = args.dataset.lower()
+    num_classes = 100 if dataset == "cifar100" else 10
+    save_path = os.path.join("outputs", f"resnet18_{dataset}.pth")
+    
+    print(f"[Fine-Tuning] Dataset: {dataset.upper()} ({num_classes} classes)")
     finetune_resnet(
         num_epochs=args.epochs,
         batch_size=args.batch_size,
         lr=args.lr,
+        num_classes=num_classes,
+        save_path=save_path,
+        dataset_name=dataset,
     )
 
 
@@ -39,14 +47,19 @@ def cmd_build_dataset(args):
     """Build feature consistency score dataset."""
     from dataset.build_score_dataset import build_score_dataset
     
-    # Check if ResNet-18 weights exist
-    resnet_path = os.path.join("outputs", "resnet18_cifar10.pth")
+    dataset = args.dataset.lower()
+    resnet_path = os.path.join("outputs", f"resnet18_{dataset}.pth")
+    
     if not os.path.exists(resnet_path):
-        print("[ERROR] ResNet-18 weights not found!")
-        print("Please run: python main.py finetune-resnet")
+        print(f"[ERROR] ResNet-18 weights not found at {resnet_path}!")
+        print(f"Please run: python main.py finetune-resnet --dataset {dataset}")
         sys.exit(1)
     
-    X, y = build_score_dataset(num_images=args.num_images)
+    X, y = build_score_dataset(
+        num_images=args.num_images,
+        dataset_name=dataset,
+        resnet_weights_path=resnet_path,
+    )
     print(f"\nDataset built successfully!")
     print(f"Shape: X={X.shape}, y={y.shape}")
 
@@ -99,7 +112,7 @@ def cmd_infer(args):
 
 
 def cmd_demo(args):
-    """Run demo on sample CIFAR-10 images (clean + adversarial)."""
+    """Run demo on sample CIFAR-10 or CIFAR-100 images (clean + adversarial)."""
     from meta_model.inference_classifier import AdversarialDetector
     from models.resnet_loader import load_resnet
     from attacks.fgsm import fgsm_attack
@@ -114,12 +127,20 @@ def cmd_demo(args):
             sys.exit(1)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dataset = args.dataset.lower()
+    num_classes = 100 if dataset == "cifar100" else 10
     
-    # Load CIFAR-10 test set
-    test_dataset = datasets.CIFAR10(
-        root="./data", train=False, download=True,
-        transform=transforms.ToTensor()
-    )
+    # Load the appropriate test dataset
+    if dataset == "cifar100":
+        test_dataset = datasets.CIFAR100(
+            root="./data", train=False, download=True,
+            transform=transforms.ToTensor()
+        )
+    else:
+        test_dataset = datasets.CIFAR10(
+            root="./data", train=False, download=True,
+            transform=transforms.ToTensor()
+        )
     
     class_names = test_dataset.classes
     
@@ -127,7 +148,8 @@ def cmd_demo(args):
     detector = AdversarialDetector(device=device)
     
     # Load ResNet-18 for generating adversarial examples
-    resnet_model = load_resnet(device=device)
+    resnet_weights = os.path.join("outputs", f"resnet18_{dataset}.pth")
+    resnet_model = load_resnet(num_classes=num_classes, weights_path=resnet_weights, device=device)
     for param in resnet_model.parameters():
         param.requires_grad = True
     
@@ -190,21 +212,30 @@ def main():
         description="Adversarial Image Detection via Feature Consistency in ViT",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python main.py finetune-resnet              # Step 1: Fine-tune ResNet-18
-  python main.py build-dataset                # Step 2: Build score dataset
-  python main.py build-dataset --num-images 10  # Quick test with 10 images
-  python main.py train                        # Step 3: Train meta-classifier
-  python main.py demo                         # Step 4: Run demo
-  python main.py infer --image photo.png      # Detect specific image
-        """
+Examples (CIFAR-10):
+  python main.py finetune-resnet                               # Step 1
+  python main.py build-dataset                                 # Step 2
+  python main.py build-dataset --num-images 10                 # Quick test
+  python main.py train                                         # Step 3
+  python main.py demo                                          # Step 4
+  python main.py infer --image photo.png                       # Detect image
+
+Examples (CIFAR-100):
+  python main.py finetune-resnet --dataset cifar100            # Step 1
+  python main.py build-dataset --dataset cifar100              # Step 2
+  python main.py train                                         # Step 3
+  python main.py demo --dataset cifar100                       # Step 4
+        ""
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     
     # finetune-resnet
-    p_finetune = subparsers.add_parser("finetune-resnet", 
-                                        help="Fine-tune ResNet-18 on CIFAR-10")
+    p_finetune = subparsers.add_parser("finetune-resnet",
+                                        help="Fine-tune ResNet-18 on CIFAR-10 or CIFAR-100")
+    p_finetune.add_argument("--dataset", type=str, default="cifar10",
+                           choices=["cifar10", "cifar100"],
+                           help="Dataset to train on (default: cifar10)")
     p_finetune.add_argument("--epochs", type=int, default=10,
                            help="Number of training epochs (default: 10)")
     p_finetune.add_argument("--batch-size", type=int, default=128,
@@ -213,10 +244,13 @@ Examples:
                            help="Learning rate (default: 0.001)")
     
     # build-dataset
-    p_build = subparsers.add_parser("build-dataset", 
+    p_build = subparsers.add_parser("build-dataset",
                                      help="Build feature consistency score dataset")
-    p_build.add_argument("--num-images", type=int, default=1000,
-                        help="Number of clean images to use (default: 1000)")
+    p_build.add_argument("--dataset", type=str, default="cifar10",
+                        choices=["cifar10", "cifar100"],
+                        help="Dataset to use (default: cifar10)")
+    p_build.add_argument("--num-images", type=int, default=50000,
+                        help="Number of clean images to use (default: 50000)")
     
     # train
     p_train = subparsers.add_parser("train", 
@@ -229,10 +263,13 @@ Examples:
                         help="Path to image file")
     
     # demo
-    p_demo = subparsers.add_parser("demo", 
-                                    help="Run demo on sample CIFAR-10 images")
-    p_demo.add_argument("--num-samples", type=int, default=5,
-                       help="Number of sample images (default: 5)")
+    p_demo = subparsers.add_parser("demo",
+                                    help="Run demo on sample CIFAR-10 or CIFAR-100 images")
+    p_demo.add_argument("--dataset", type=str, default="cifar10",
+                       choices=["cifar10", "cifar100"],
+                       help="Dataset to use (default: cifar10)")
+    p_demo.add_argument("--num-samples", type=int, default=300,
+                       help="Number of sample images (default: 300)")
     
     args = parser.parse_args()
     

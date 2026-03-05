@@ -1,3 +1,6 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # Fix OpenMP conflict on Windows/conda
+
 """
 Generate adversarial test images for manual inspection.
 Run AFTER ResNet-18 fine-tuning is complete.
@@ -37,6 +40,8 @@ def generate_test_images():
     
     # Pick a test image
     image, label = test_dataset[0]  # First test image
+    # print total number of test images
+    print(f"Total test images: {len(test_dataset)}")
     image = image.to(device)
     
     print(f"Original image class: {class_names[label]}")
