@@ -26,7 +26,14 @@ import numpy as np
 
 def cmd_finetune_resnet(args):
     """Fine-tune ResNet-18 on the specified dataset (cifar10 or cifar100)."""
-    from models.resnet_loader import finetune_resnet
+    try:
+        from models.resnet_loader import finetune_resnet
+    except ImportError as e:
+        print(f"[ERROR] Failed to import resnet_loader: {e}")
+        sys.exit(1)
+    
+    # Ensure outputs directory exists
+    os.makedirs("outputs", exist_ok=True)
     
     dataset = args.dataset.lower()
     num_classes = 100 if dataset == "cifar100" else 10
@@ -45,7 +52,14 @@ def cmd_finetune_resnet(args):
 
 def cmd_build_dataset(args):
     """Build feature consistency score dataset."""
-    from dataset.build_score_dataset import build_score_dataset
+    try:
+        from dataset.build_score_dataset import build_score_dataset
+    except ImportError as e:
+        print(f"[ERROR] Failed to import build_score_dataset: {e}")
+        sys.exit(1)
+    
+    # Ensure outputs directory exists
+    os.makedirs("outputs", exist_ok=True)
     
     dataset = args.dataset.lower()
     resnet_path = os.path.join("outputs", f"resnet18_{dataset}.pth")
@@ -66,7 +80,11 @@ def cmd_build_dataset(args):
 
 def cmd_train(args):
     """Train meta-classifiers on the score dataset."""
-    from meta_model.train_classifier import train_classifier
+    try:
+        from meta_model.train_classifier import train_classifier
+    except ImportError as e:
+        print(f"[ERROR] Failed to import train_classifier: {e}")
+        sys.exit(1)
     
     dataset_path = os.path.join("outputs", "score_dataset.npz")
     if not os.path.exists(dataset_path):
@@ -80,9 +98,13 @@ def cmd_train(args):
 
 def cmd_infer(args):
     """Run inference on a single image."""
-    from meta_model.inference_classifier import AdversarialDetector
-    from torchvision import transforms
-    from PIL import Image
+    try:
+        from meta_model.inference_classifier import AdversarialDetector
+        from torchvision import transforms
+        from PIL import Image
+    except ImportError as e:
+        print(f"[ERROR] Failed to import required modules: {e}")
+        sys.exit(1)
     
     # Check if required files exist
     for f in ["outputs/best_meta_model.pkl", "outputs/scaler.pkl"]:
@@ -91,33 +113,47 @@ def cmd_infer(args):
             print("Please run: python main.py train")
             sys.exit(1)
     
-    # Load image
-    image = Image.open(args.image).convert("RGB")
-    transform = transforms.ToTensor()
-    image_tensor = transform(image)
+    # Check if image file exists
+    if not os.path.exists(args.image):
+        print(f"[ERROR] Image file {args.image} not found!")
+        sys.exit(1)
     
-    # Run detection
-    detector = AdversarialDetector()
-    result = detector.predict(image_tensor)
-    
-    print(f"\n{'=' * 50}")
-    print(f" RESULT: {result['label']}")
-    print(f" Confidence: {result['confidence']:.4f}")
-    print(f"{'=' * 50}")
-    print(f" P(clean):       {result['probabilities']['clean']:.4f}")
-    print(f" P(adversarial): {result['probabilities']['adversarial']:.4f}")
-    print(f"{'=' * 50}")
-    
-    detector.cleanup()
+    try:
+        # Load image
+        image = Image.open(args.image).convert("RGB")
+        transform = transforms.ToTensor()
+        image_tensor = transform(image)
+        
+        # Run detection
+        detector = AdversarialDetector()
+    except Exception as e:
+        print(f"[ERROR] Failed to load image: {e}")
+        sys.exit(1)
+    try:
+        result = detector.predict(image_tensor)
+        
+        print(f"\n{'=' * 50}")
+        print(f" RESULT: {result['label']}")
+        print(f" Confidence: {result['confidence']:.4f}")
+        print(f"{'=' * 50}")
+        print(f" P(clean):       {result['probabilities']['clean']:.4f}")
+        print(f" P(adversarial): {result['probabilities']['adversarial']:.4f}")
+        print(f"{'=' * 50}")
+    finally:
+        detector.cleanup()
 
 
 def cmd_demo(args):
     """Run demo on sample CIFAR-10 or CIFAR-100 images (clean + adversarial)."""
-    from meta_model.inference_classifier import AdversarialDetector
-    from models.resnet_loader import load_resnet
-    from attacks.fgsm import fgsm_attack
-    from attacks.pgd import pgd_attack
-    from torchvision import datasets, transforms
+    try:
+        from meta_model.inference_classifier import AdversarialDetector
+        from models.resnet_loader import load_resnet
+        from attacks.fgsm import fgsm_attack
+        from attacks.pgd import pgd_attack
+        from torchvision import datasets, transforms
+    except ImportError as e:
+        print(f"[ERROR] Failed to import required modules: {e}")
+        sys.exit(1)
     
     # Check if required files exist
     for f in ["outputs/best_meta_model.pkl", "outputs/scaler.pkl"]:
@@ -130,81 +166,92 @@ def cmd_demo(args):
     dataset = args.dataset.lower()
     num_classes = 100 if dataset == "cifar100" else 10
     
-    # Load the appropriate test dataset
-    if dataset == "cifar100":
-        test_dataset = datasets.CIFAR100(
-            root="./data", train=False, download=True,
-            transform=transforms.ToTensor()
-        )
-    else:
-        test_dataset = datasets.CIFAR10(
-            root="./data", train=False, download=True,
-            transform=transforms.ToTensor()
-        )
+    # Ensure data directory exists
+    os.makedirs("./data", exist_ok=True)
     
-    class_names = test_dataset.classes
-    
-    # Load detector
-    detector = AdversarialDetector(device=device)
-    
-    # Load ResNet-18 for generating adversarial examples
-    resnet_weights = os.path.join("outputs", f"resnet18_{dataset}.pth")
-    resnet_model = load_resnet(num_classes=num_classes, weights_path=resnet_weights, device=device)
-    for param in resnet_model.parameters():
-        param.requires_grad = True
+    try:
+        # Load the appropriate test dataset
+        if dataset == "cifar100":
+            test_dataset = datasets.CIFAR100(
+                root="./data", train=False, download=True,
+                transform=transforms.ToTensor()
+            )
+        else:
+            test_dataset = datasets.CIFAR10(
+                root="./data", train=False, download=True,
+                transform=transforms.ToTensor()
+            )
+        
+        class_names = test_dataset.classes
+        
+        # Load detector
+        detector = AdversarialDetector(device=device)
+        
+        # Load ResNet-18 for generating adversarial examples
+        resnet_weights = os.path.join("outputs", f"resnet18_{dataset}.pth")
+        resnet_model = load_resnet(num_classes=num_classes, weights_path=resnet_weights, device=device)
+        for param in resnet_model.parameters():
+            param.requires_grad = True
+    except Exception as e:
+        print(f"[ERROR] Failed to load models or dataset: {e}")
+        sys.exit(1)
     
     print(f"\n{'=' * 60}")
     print(f" ADVERSARIAL DETECTION DEMO")
     print(f"{'=' * 60}")
     
-    # Test on 5 random images
-    num_demo = args.num_samples if hasattr(args, 'num_samples') else 5
+    num_demo = min(args.num_samples, len(test_dataset)) if hasattr(args, 'num_samples') else 5
     indices = np.random.choice(len(test_dataset), num_demo, replace=False)
     
     correct = 0
     total = 0
     
-    for idx in indices:
-        image, label = test_dataset[idx]
-        image = image.to(device)
+    try:
+        for idx in indices:
+            image, label = test_dataset[idx]
+            image = image.to(device)
+            
+            print(f"\n{'─' * 50}")
+            print(f"Image {idx} | True class: {class_names[label]}")
+            
+            # Test clean image
+            result_clean = detector.predict(image)
+            is_correct_clean = result_clean["prediction"] == 0
+            correct += int(is_correct_clean)
+            total += 1
+            status = "✓" if is_correct_clean else "✗"
+            print(f"  Clean:    {result_clean['label']} "
+                  f"(conf: {result_clean['confidence']:.4f}) [{status}]")
+            
+            # Test FGSM adversarial
+            adv_fgsm = fgsm_attack(resnet_model, image, label)
+            result_fgsm = detector.predict(adv_fgsm)
+            is_correct_fgsm = result_fgsm["prediction"] == 1
+            correct += int(is_correct_fgsm)
+            total += 1
+            status = "✓" if is_correct_fgsm else "✗"
+            print(f"  FGSM:     {result_fgsm['label']} "
+                  f"(conf: {result_fgsm['confidence']:.4f}) [{status}]")
+            
+            # Test PGD adversarial
+            adv_pgd = pgd_attack(resnet_model, image, label)
+            result_pgd = detector.predict(adv_pgd)
+            is_correct_pgd = result_pgd["prediction"] == 1
+            correct += int(is_correct_pgd)
+            total += 1
+            status = "✓" if is_correct_pgd else "✗"
+            print(f"  PGD:      {result_pgd['label']} "
+                  f"(conf: {result_pgd['confidence']:.4f}) [{status}]")
         
-        print(f"\n{'─' * 50}")
-        print(f"Image {idx} | True class: {class_names[label]}")
-        
-        # Test clean image
-        result_clean = detector.predict(image)
-        is_correct_clean = result_clean["prediction"] == 0
-        correct += int(is_correct_clean)
-        total += 1
-        status = "✓" if is_correct_clean else "✗"
-        print(f"  Clean:    {result_clean['label']} "
-              f"(conf: {result_clean['confidence']:.4f}) [{status}]")
-        
-        # Test FGSM adversarial
-        adv_fgsm = fgsm_attack(resnet_model, image, label)
-        result_fgsm = detector.predict(adv_fgsm)
-        is_correct_fgsm = result_fgsm["prediction"] == 1
-        correct += int(is_correct_fgsm)
-        total += 1
-        status = "✓" if is_correct_fgsm else "✗"
-        print(f"  FGSM:     {result_fgsm['label']} "
-              f"(conf: {result_fgsm['confidence']:.4f}) [{status}]")
-        
-        # Test PGD adversarial
-        adv_pgd = pgd_attack(resnet_model, image, label)
-        result_pgd = detector.predict(adv_pgd)
-        is_correct_pgd = result_pgd["prediction"] == 1
-        correct += int(is_correct_pgd)
-        total += 1
-        status = "✓" if is_correct_pgd else "✗"
-        print(f"  PGD:      {result_pgd['label']} "
-              f"(conf: {result_pgd['confidence']:.4f}) [{status}]")
-    
-    print(f"\n{'=' * 60}")
-    print(f" Demo Accuracy: {correct}/{total} = {100*correct/total:.1f}%")
-    print(f"{'=' * 60}")
-    
-    detector.cleanup()
+        print(f"\n{'=' * 60}")
+        print(f" Demo Accuracy: {correct}/{total} = {100*correct/total:.1f}%")
+        print(f"{'=' * 60}")
+    except KeyboardInterrupt:
+        print("\n[INFO] Demo interrupted by user")
+    except Exception as e:
+        print(f"\n[ERROR] Demo failed: {e}")
+    finally:
+        detector.cleanup()
 
 
 def main():
@@ -225,7 +272,7 @@ Examples (CIFAR-100):
   python main.py build-dataset --dataset cifar100              # Step 2
   python main.py train                                         # Step 3
   python main.py demo --dataset cifar100                       # Step 4
-        ""
+        """
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -268,8 +315,8 @@ Examples (CIFAR-100):
     p_demo.add_argument("--dataset", type=str, default="cifar10",
                        choices=["cifar10", "cifar100"],
                        help="Dataset to use (default: cifar10)")
-    p_demo.add_argument("--num-samples", type=int, default=300,
-                       help="Number of sample images (default: 300)")
+    p_demo.add_argument("--num-samples", type=int, default=5,
+                       help="Number of sample images (default: 5)")
     
     args = parser.parse_args()
     

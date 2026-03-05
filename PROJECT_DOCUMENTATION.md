@@ -900,6 +900,14 @@ python main.py train
 python main.py demo
 ```
 
+```bash
+# Full CIFAR-100 pipeline:
+python main.py finetune-resnet --dataset cifar100    # Step 1 (100 classes)
+python main.py build-dataset --dataset cifar100      # Step 2
+python main.py train                                 # Step 3 (same)
+python main.py demo --dataset cifar100               # Step 4
+````
+
 ### Quick Test (Small Subset)
 
 ```bash
