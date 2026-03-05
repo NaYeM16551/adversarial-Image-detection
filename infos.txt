@@ -1,0 +1,80 @@
+The CIFAR-10 dataset consists of 60000 32x32 colour images in 10 classes, with 6000 images per class. There are 50000 training images and 10000 test images.
+
+The dataset is divided into five training batches and one test batch, each with 10000 images. The test batch contains exactly 1000 randomly-selected images from each class. The training batches contain the remaining images in random order, but some training batches may contain more images from one class than another. Between them, the training batches contain exactly 5000 images from each class.
+
+https://www.cs.toronto.edu/~kriz/cifar.html
+
+
+
+A neural network classifies an image by following the gradient of its loss.
+FGSM and PGD deliberately exploit this gradient
+to add tiny, invisible noise that humans can’t see but models fail on.
+
+
+FGSM
+
+FGSM generates adversarial examples by adding a small perturbation in the direction of the sign of the input gradient to maximize the model loss.
+
+PGD 
+
+PGD is an iterative extension of FGSM that applies multiple small gradient-based perturbations while projecting the result within a bounded region.
+
+
+
+Key hypothesis:
+Our key hypothesis is that clean images exhibit feature stability under small benign transformations, while adversarial or poisoned images exhibit feature fragility. Since adversarial perturbations are optimized to manipulate model behavior and lie close to decision boundaries, even minor transformations can significantly alter their internal representations. In contrast, clean images lie in stable regions of the feature space, resulting in bounded feature variation across transformer layers.
+
+
+How to get poisoned dataset?
+https://github.com/Harry24k/adversarial-attacks-pytorch
+
+
+
+Benign transformations
+from torchvision import transforms
+
+
+
+https://arxiv.org/abs/1704.01155
+https://arxiv.org/abs/2101.11466
+
+
+
+core contributions:
+We propose a training-free adversarial detection approach that leverages layerwise feature consistency in Vision Transformers under benign input transformations, revealing internal representation instability that is not captured by output-level methods.
+
+
+
+Learnable model
+
+Say,A benign image and slightly perturbed image.A learner model will compare the feature score label it as 0
+while for malicious image it will label as 1
+This is how we will train a learner model
+
+
+
+
+
+
+Model: pretrained, benign ViT
+
+We do not modify or retrain it
+
+We test it with:clean images
+
+adversarial (poisoned) images generated at test time
+
+You apply benign transformations and analyze feature consistency
+
+This setting is called:
+
+post-hoc adversarial example detection which is a valid and common research problem
+
+
+
+Given a pretrained benign model, can we detect whether a given input image is clean or adversarial, without retraining the model?
+
+This is a real-world problem, because in practice:
+Models are deployed pretrained
+You often cannot retrain them
+You still want to filter malicious inputs

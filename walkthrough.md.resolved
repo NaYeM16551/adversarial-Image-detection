@@ -1,0 +1,80 @@
+# Walkthrough — Adversarial Image Detection via Feature Consistency in ViT
+
+## What Was Built
+
+A complete adversarial image detection system using the **two-model architecture**:
+
+| Role | Model | Purpose |
+|------|-------|---------|
+| **Attack model** | ResNet-18 (CNN) | White-box FGSM/PGD adversarial example generation |
+| **Detection model** | ViT-B/16 (Transformer) | Multi-layer feature extraction for consistency scoring |
+| **Meta-classifier** | LR / RF / GB / MLP | Predicts clean vs. adversarial from 24-dim score vectors |
+
+## Project Structure
+
+```
+project/
+├── models/
+│    ├── vit_loader.py           # ViT-B/16 with forward hooks on blocks [3,6,9,11]
+│    └── resnet_loader.py        # ResNet-18 adapted for CIFAR-10 + fine-tuning
+├── attacks/
+│    ├── fgsm.py                 # FGSM (ε=8/255) targeting ResNet-18
+│    └── pgd.py                  # PGD (ε=8/255, α=2/255, 7 steps) targeting ResNet-18
+├── features/
+│    ├── feature_extractor.py    # CLS token extraction from ViT layers
+│    └── feature_distance.py     # L2 + cosine distance → 24-dim score vector
+├── dataset/
+│    └── build_score_dataset.py  # Generates (3000, 24) dataset from CIFAR-10
+├── meta_model/
+│    ├── train_classifier.py     # Trains 4 classifiers, plots ROC, saves best
+│    └── inference_classifier.py # AdversarialDetector class for inference
+├── utils/
+│    └── transforms.py           # Blur, noise, rotation transforms
+├── main.py                      # CLI: finetune-resnet | build-dataset | train | demo | infer
+└── requirements.txt
+```
+
+## Score Vector Design (24 dimensions)
+
+```
+3 transforms × 4 layers × 2 metrics = 24 features
+
+Transforms: blur, noise, rotation
+Layers:     block 3 (early), 6 (mid), 9 (late), 11 (final)
+Metrics:    L2 distance, cosine distance
+```
+
+## How to Run
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Fine-tune ResNet-18 on CIFAR-10 (attack model)
+python main.py finetune-resnet
+
+# 3. Build score dataset (1000 images → 3000 samples)
+python main.py build-dataset
+
+# 4. Train meta-classifiers
+python main.py train
+
+# 5. Run demo
+python main.py demo
+
+# 6. Detect a specific image
+python main.py infer --image path/to/image.png
+```
+
+### Quick test (small subset)
+```bash
+python main.py build-dataset --num-images 10
+python main.py train
+```
+
+## Key Design Decisions
+
+1. **Transfer attack setting** — Attacks on ResNet-18, detection via ViT. More realistic than white-box ViT attacks.
+2. **CLS token features** — Using only the CLS token (global representation) for distance computation, not all 197 tokens.
+3. **Modified ResNet-18** — `conv1` changed to 3×3/stride-1 and `maxpool` removed for native 32×32 CIFAR-10 resolution.
+4. **StandardScaler** — Features are standardized before classification; scaler is saved for inference.
